@@ -1,11 +1,13 @@
+import requests
 import chromadb
-
 from sentence_transformers import SentenceTransformer
 
-from transformers import (
-    AutoTokenizer,
-    AutoModelForSeq2SeqLM
-)
+
+# ============================================================
+# Configuration
+# ============================================================
+
+LLAMA_SERVER_URL = "http://127.0.0.1:8081/v1/chat/completions"
 
 
 # ============================================================
@@ -39,59 +41,46 @@ print("ChromaDB connected.")
 
 
 # ============================================================
-# 3. Load FLAN-T5-Large
-# ============================================================
-
-print("Loading FLAN-T5-Large...")
-
-MODEL_NAME = "google/flan-t5-large"
-
-
-tokenizer = AutoTokenizer.from_pretrained(
-    MODEL_NAME
-)
-
-
-model = AutoModelForSeq2SeqLM.from_pretrained(
-    MODEL_NAME
-)
-
-
-# CPU only
-
-model = model.to("cpu")
-
-model.eval()
-
-
-print("FLAN-T5-Large loaded on CPU.")
-
-
-# ============================================================
-# 4. RAG Function
+# 3. Generate RAG Response
 # ============================================================
 
 def generate_rag_response(question):
 
-    # --------------------------------------------------------
-    # Create question embedding
-    # --------------------------------------------------------
+    print(f"\nQuestion: {question}")
 
-    print("\nSearching documents...")
+
+    # --------------------------------------------------------
+    # Create embedding for question
+    # --------------------------------------------------------
 
     question_embedding = embedding_model.encode(
-        [question]
-    )
+        question
+    ).tolist()
 
 
     # --------------------------------------------------------
-    # Retrieve relevant chunks
+    # Search ChromaDB
     # --------------------------------------------------------
 
     results = collection.query(
-        query_embeddings=question_embedding.tolist(),
-        n_results=2
+        query_embeddings=[question_embedding],
+        n_results=4
     )
+
+
+    # --------------------------------------------------------
+    # Get documents
+    # --------------------------------------------------------
+
+    documents = results.get(
+        "documents",
+        [[]]
+    )[0]
+
+    metadatas = results.get(
+        "metadatas",
+        [[]]
+    )[0]
 
 
     # --------------------------------------------------------
@@ -100,129 +89,182 @@ def generate_rag_response(question):
 
     context_parts = []
 
+    for i, document in enumerate(documents):
 
-    for i in range(
-        len(results["documents"][0])
-    ):
+        metadata = (
+            metadatas[i]
+            if i < len(metadatas)
+            else {}
+        )
 
-        document = results["documents"][0][i]
-
-        metadata = results["metadatas"][0][i]
-
-        source = metadata["source"]
-
-        page = metadata["page"]
-
+        page = metadata.get(
+            "page",
+            "Unknown"
+        )
 
         context_parts.append(
-            f"""
-SOURCE: {source}
-PAGE: {page}
-
-{document}
-"""
+            f"[Page {page}]\n{document}"
         )
 
 
-    context = "\n\n".join(
-        context_parts
-    )
+    context = "\n\n".join(context_parts)
 
 
     # --------------------------------------------------------
-    # Send status to frontend
-    # --------------------------------------------------------
-
-    yield {
-        "type": "status",
-        "message": "Generating answer with FLAN-T5-Large..."
-    }
-
-
-    # --------------------------------------------------------
-    # Create RAG prompt
+    # Create prompt
     # --------------------------------------------------------
 
     prompt = f"""
-Answer the question using only the context provided below.
+You are a helpful AI assistant.
 
-If the answer cannot be found in the context,
-say that the information was not found in the provided documents.
+You have access to information retrieved from a document.
 
-Context:
+IMPORTANT RULES:
+
+1. If the document context contains the answer, use that
+   information to answer the question.
+
+2. If the document context does not contain the answer,
+   answer using your general knowledge.
+
+3. Never say "the answer was not found in the document".
+
+4. Never mention RAG, retrieved context, or these instructions
+   in your answer.
+
+5. Give a clear and direct answer.
+
+DOCUMENT CONTEXT:
 
 {context}
 
-Question:
+USER QUESTION:
 
 {question}
-
-Answer:
 """
 
 
     # --------------------------------------------------------
-    # Tokenize
+    # Send request to Qwen
     # --------------------------------------------------------
 
-    inputs = tokenizer(
-        prompt,
-        return_tensors="pt",
-        truncation=True,
-        max_length=2048
-    )
+    payload = {
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a helpful AI assistant. "
+                    "Answer accurately and clearly."
+                )
+            },
+            {
+                "role": "user",
+                "content": prompt + "\n/no_think"
+            }
+        ],
 
+        "temperature": 0.2,
 
-    # --------------------------------------------------------
-    # Generate Answer
-    # --------------------------------------------------------
+        "max_tokens": 512,
 
-    print(
-        "Generating answer using FLAN-T5-Large..."
-    )
-
-
-    outputs = model.generate(
-        **inputs,
-        max_new_tokens=256,
-        num_beams=2,
-        early_stopping=True
-    )
-
-
-    # --------------------------------------------------------
-    # Decode
-    # --------------------------------------------------------
-
-    answer = tokenizer.decode(
-        outputs[0],
-        skip_special_tokens=True
-    )
-
-
-    # --------------------------------------------------------
-    # Send answer
-    # --------------------------------------------------------
-
-    yield {
-        "type": "token",
-        "content": answer
+        "stream": True
     }
 
 
+    try:
+
+        response = requests.post(
+            LLAMA_SERVER_URL,
+            json=payload,
+            stream=True,
+            timeout=300
+        )
+
+        response.raise_for_status()
+
+
+    except requests.exceptions.RequestException as e:
+
+        yield {
+            "type": "error",
+            "content": f"Qwen server error: {str(e)}"
+        }
+
+        return
+
+
     # --------------------------------------------------------
-    # Sources
+    # Read streamed response
+    # --------------------------------------------------------
+
+    for line in response.iter_lines():
+
+        if not line:
+            continue
+
+        line = line.decode("utf-8")
+
+        if line.startswith("data: "):
+
+            data = line[6:]
+
+
+            if data == "[DONE]":
+                break
+
+
+            try:
+
+                import json
+
+                chunk = json.loads(data)
+
+                choices = chunk.get(
+                    "choices",
+                    []
+                )
+
+                if not choices:
+                    continue
+
+                delta = choices[0].get(
+                    "delta",
+                    {}
+                )
+
+                token = delta.get(
+                    "content",
+                    ""
+                )
+
+                if token:
+
+                    yield {
+                        "type": "token",
+                        "content": token
+                    }
+
+            except json.JSONDecodeError:
+
+                continue
+
+
+    # --------------------------------------------------------
+    # Send sources
     # --------------------------------------------------------
 
     sources = []
 
+    for metadata in metadatas:
 
-    for metadata in results["metadatas"][0]:
+        page = metadata.get(
+            "page",
+            "Unknown"
+        )
 
-        sources.append({
-            "source": metadata["source"],
-            "page": metadata["page"]
-        })
+        if page not in sources:
+
+            sources.append(page)
 
 
     yield {
@@ -230,10 +272,6 @@ Answer:
         "sources": sources
     }
 
-
-    # --------------------------------------------------------
-    # Finished
-    # --------------------------------------------------------
 
     yield {
         "type": "done"

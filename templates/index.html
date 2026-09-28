@@ -2,201 +2,98 @@
 <html lang="en">
 
 <head>
-
     <meta charset="UTF-8">
-
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0">
-
-    <title>Local RAG Chatbot</title>
-
-    <link rel="stylesheet"
-          href="{{ url_for('static', filename='style.css') }}">
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local RAG · Document Intelligence</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-
 
 <body>
 
-<div class="app">
+    <div class="workspace">
 
-
-    <!-- Sidebar -->
-
-    <aside class="sidebar">
-
-        <div class="logo">
-            <div class="logo-icon">R</div>
-            <div>
-                <h2>Local RAG</h2>
-                <span>Qwen3 4B</span>
-            </div>
-        </div>
-
-
-        <button class="new-chat"
-                onclick="newChat()">
-
-            + New Chat
-
-        </button>
-
-
-        <div class="sidebar-info">
-
-            <h4>System</h4>
-
-            <div class="status">
-                <span class="status-dot"></span>
-                Ollama Online
+        <!-- Command strip -->
+        <header class="command-strip">
+            <div class="brand">
+                <span class="brand-mark">R</span>
+                <span class="brand-name">Local RAG</span>
             </div>
 
-            <div class="status">
-                <span class="status-dot"></span>
-                ChromaDB Ready
+            <div class="strip-status">
+                <span class="pill"><i class="dot"></i>Ollama</span>
+                <span class="pill"><i class="dot"></i>ChromaDB</span>
+                <span class="pill mono">Qwen3 4B</span>
             </div>
 
-            <div class="status">
-                <span class="status-dot"></span>
-                Local Embeddings
-            </div>
-
-        </div>
-
-
-        <div class="model-info">
-
-            <p>MODEL</p>
-
-            <strong>Qwen3 4B</strong>
-
-            <span>Running locally</span>
-
-        </div>
-
-    </aside>
-
-
-
-    <!-- Main content -->
-
-    <main class="main">
-
-
-        <!-- Header -->
-
-        <header class="header">
-
-            <div>
-
-                <h1>Document Assistant</h1>
-
-                <p>
-                    Ask questions about your documents
-                </p>
-
-            </div>
-
-
-            <div class="local-badge">
-
-                <span></span>
-
-                LOCAL AI
-
-            </div>
-
+            <button class="panel-toggle" id="panelToggle" onclick="toggleKnowledgePanel()">
+                Knowledge <span class="mono" id="sourceCount">0</span>
+            </button>
         </header>
 
+        <!-- Two panes -->
+        <div class="panes">
 
+            <!-- Conversation rail -->
+            <section class="conversation-rail">
 
-        <!-- Chat area -->
-
-        <section class="chat-container"
-                 id="chatContainer">
-
-
-            <!-- Welcome -->
-
-            <div class="welcome"
-                 id="welcome">
-
-                <div class="welcome-icon">
-                    R
+                <div class="feed" id="chatContainer">
+                    <div class="welcome" id="welcome">
+                        <h1>What's in your documents?</h1>
+                        <p>Ask a question and I'll retrieve the exact passages behind every answer.</p>
+                        <div class="prompts">
+                            <button class="prompt-chip" onclick="askSuggestion(this)">What is SVM?</button>
+                            <button class="prompt-chip" onclick="askSuggestion(this)">What is the optimization problem
+                                for SVM?</button>
+                            <button class="prompt-chip" onclick="askSuggestion(this)">Explain the SVM margin.</button>
+                        </div>
+                    </div>
                 </div>
 
-                <h2>
-                    How can I help you?
-                </h2>
-
-                <p>
-                    Ask a question about your uploaded
-                    documents.
-                </p>
-
-
-                <div class="suggestions">
-
-                    <button onclick="askSuggestion(this)">
-                        What is SVM?
-                    </button>
-
-                    <button onclick="askSuggestion(this)">
-                        What is the optimization problem for SVM?
-                    </button>
-
-                    <button onclick="askSuggestion(this)">
-                        Explain the SVM margin.
-                    </button>
-
+                <!-- Intelligence Hub -->
+                <div class="intelligence-hub" id="intelligenceHub" data-state="idle">
+                    <div class="hub-glow"></div>
+                    <div class="hub-row">
+                        <span class="hub-state-label" id="hubStateLabel">Ask anything</span>
+                        <button class="hub-reset" onclick="newChat()" title="New chat">New</button>
+                    </div>
+                    <div class="hub-input-row">
+                        <textarea id="question" placeholder="Ask something about your documents…" rows="1"></textarea>
+                        <button id="sendButton" class="hub-send" onclick="sendQuestion()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
 
-            </div>
+            </section>
 
-        </section>
-
-
-
-        <!-- Input -->
-
-        <div class="input-area">
-
-            <div class="input-box">
-
-                <textarea
-                    id="question"
-                    placeholder="Ask something about your documents..."
-                    rows="1"></textarea>
-
-
-                <button
-                    id="sendButton"
-                    onclick="sendQuestion()">
-
-                    ➤
-
-                </button>
-
-            </div>
-
-
-            <p class="disclaimer">
-
-                Local RAG • Qwen3 4B • Ollama
-
-            </p>
+            <!-- Knowledge Panel -->
+            <aside class="knowledge-panel" id="knowledgePanel">
+                <div class="knowledge-header">
+                    <span>Retrieved evidence</span>
+                </div>
+                <div class="knowledge-body" id="knowledgeBody">
+                    <div class="knowledge-empty" id="knowledgeEmpty">
+                        <div class="constellation">
+                            <span></span><span></span><span></span><span></span><span></span>
+                        </div>
+                        <p>Source passages will appear here as they're retrieved.</p>
+                    </div>
+                </div>
+            </aside>
 
         </div>
+    </div>
 
-
-    </main>
-
-</div>
-
-
-<script src="{{ url_for('static', filename='script.js') }}">
-</script>
-
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 
 </html>

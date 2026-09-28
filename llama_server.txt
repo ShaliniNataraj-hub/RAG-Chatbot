@@ -1,0 +1,15 @@
+Step 1 — Install llama.cpp
+winget install llama.cpp
+
+Check:
+llama-cli --version
+
+Step 2 — Download the Q4_K_M model
+llama-cli -hf Qwen/Qwen3-4B-GGUF:Q4_K_M
+
+1. Run Qwen explicitly on CPU
+llama-cli -hf Qwen/Qwen3-4B-GGUF:Q4_K_M -ngl 0
+
+Use another port or running server
+llama-server -hf Qwen/Qwen3-4B-GGUF:Q4_K_M -ngl 0 --port 8081
+
