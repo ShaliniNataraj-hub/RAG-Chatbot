@@ -1,6 +1,8 @@
-pip install flask
-pip install chromadb
-pip install sentence-transformers
-pip install pypdf
-pip install requests
-pip install huggingface-hub
+flask
+chromadb
+sentence-transformers
+transformers
+torch
+pypdf
+requests
+beautifulsoup4
